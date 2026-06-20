@@ -1,0 +1,87 @@
+# 通用列表页规则（兜底）
+"generic_list_rule":
+  article_list_css: "article, .card, .news-item, .post, .teaser, .views-row"
+  title_css: "h2 a, h3 a, .title a"
+  link_css: "a"
+  date_css: "time, .date, .meta, .published, .news-date"
+
+# ── 可用站点规则 ──
+
+# 剑桥大学
+"cam.ac.uk":
+  base_url: "https://www.cam.ac.uk"
+  news_index: "/latest-news"
+  article_list_css: "article.clearfix.cam-horizontal-teaser"
+  title_css: "h3 a"
+  link_css: "h3 a"
+  date_css: "time"
+  date_format: "%d %B %Y"
+
+# 帝国理工学院（全 JS 渲染，无法稳定抓取）
+# 帝国理工学院（全 JS 渲染，HTTP 202 空响应，不可用）
+#"imperial.ac.uk":
+#  base_url: "https://www.imperial.ac.uk"
+#  news_index: "/news/articles/"
+#  article_list_css: "article"
+#  title_css: "a.listing-item"
+#  link_css: "a.listing-item"
+#  date_css: ".listing-item__meta p"
+
+# 华威大学新闻稿
+"warwick.ac.uk":
+  base_url: "https://warwick.ac.uk"
+  news_index: "/news/pressreleases/"
+  article_list_css: ".newsItemDiv"
+  title_css: "h2.newsItemTitle a"
+  link_css: "h2.newsItemTitle a"
+  date_css: "[class*=Date]"
+
+# 爱丁堡大学
+"ed.ac.uk":
+  base_url: "https://www.ed.ac.uk"
+  news_index: "/news/latest"
+  article_list_css: ".news-listing"
+  title_css: "h3 a"
+  link_css: "h3 a"
+  date_css: ".news-date"
+  date_format: "%d %B, %Y"
+
+# 香港理工大学
+"polyu.edu.hk":
+  base_url: "https://www.polyu.edu.hk"
+  news_index: "/media/media-releases/"
+  article_list_css: ".border-hover-shadow-list__itm"
+  title_css: ".border-hover-shadow-list__itm"
+  link_css: ".border-hover-shadow-list__itm"
+  date_css: ".p-date"
+  date_format: "%d %b, %Y"
+
+# 香港科技大学（中文版）
+"hkust.edu.hk":
+  base_url: "https://hkust.edu.hk"
+  news_index: "/zh-hans/news/listing"
+  article_list_css: ".news-item"
+  title_css: ".news-item__title"
+  link_css: "a.cover-link"
+  date_css: ".news-item__date time"
+  date_format: "%Y-%m-%d"
+
+# 伦敦国王学院
+"kcl.ac.uk":
+  base_url: "https://www.kcl.ac.uk"
+  news_index: "/news/kings-news"
+  article_list_css: ".content"
+  title_css: ".content-text h3 a"
+  link_css: ".content-text h3 a"
+  date_css: "time"
+  date_format: "%d %B %Y"
+
+"lse.ac.uk":
+  base_url: "https://www.lse.ac.uk"
+  news_index: "/news/search-news"
+  article_list_css: ".card__content"
+  title_css: ".card__title a"
+  link_css: ".card__title a"
+  date_css: ".card__date"
+
+
