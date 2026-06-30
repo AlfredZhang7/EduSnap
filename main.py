@@ -21,10 +21,10 @@ import yaml
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
-from src.scraper import SourceReader, Fetcher, Parser
+from src.scraper import SourceReader, Fetcher, Parser, WeChatScraper
 from src.processor import Cleaner, Deduplicator
 from src.llm import LLMClient, ArticleComposer, SummaryExtractor
-from src.output import DirManager, Writer
+from src.output import DirManager, Writer, HtmlWriter
 
 # -- 路径常量 ----------------------------------------------
 if getattr(sys, 'frozen', False):
@@ -41,6 +41,7 @@ SOURCES_PATH = CONFIG_DIR / "sources.md"
 RULES_PATH = CONFIG_DIR / "scraping_rules.yaml"
 COMPOSE_PROMPT_PATH = PROMPTS_DIR / "compose_article.txt"
 SUMMARY_PROMPT_PATH = PROMPTS_DIR / "generate_summary.txt"
+
 
 
 # -- 日志配置 ----------------------------------------------
@@ -142,11 +143,17 @@ def run_pipeline(
     # 1. 读取来源
     source_reader = SourceReader(SOURCES_PATH)
     urls = source_reader.read()
-    if not urls:
-        logger.error("没有有效的来源 URL，请检查 %s", SOURCES_PATH)
+    wechat_accounts = source_reader.read_wechat_accounts()
+
+    total_sources = len(urls) + len(wechat_accounts)
+    if total_sources == 0:
+        logger.error("没有有效的来源，请检查 %s", SOURCES_PATH)
         return
 
-    logger.info("共 %d 个来源: %s", len(urls), [u.split("//")[1].split("/")[0] for u in urls])
+    logger.info(
+        "来源统计: %d 个网站, %d 个公众号名称",
+        len(urls), len(wechat_accounts),
+    )
 
     if dry_run:
         logger.info("Dry-run 模式，仅输出来源列表。")
@@ -159,14 +166,15 @@ def run_pipeline(
         use_playwright=env["use_playwright"],
         playwright_headless=env["playwright_headless"],
     )
+    wechat_scraper = WeChatScraper()
     parser = Parser(rules)
     cleaner = Cleaner()
     dedup = Deduplicator()
 
     all_articles = []
-    site_results: list[dict] = []  # 记录每个站点的抓取结果
+    site_results: list[dict] = []
 
-    # 3. 逐站抓取 -> 解析 -> 清洗
+    # 3a. 普通网站抓取 -> 解析 -> 清洗
     for url in urls:
         domain = extract_domain(url)
         result = fetcher.fetch(url)
@@ -191,6 +199,37 @@ def run_pipeline(
             "reason": "" if articles else "CSS 选择器未匹配到文章",
             "articles": len(articles),
         })
+
+    # 3b. 公众号名称搜索（通过搜狗搜索）
+    for account_name in wechat_accounts:
+        logger.info("正在搜索公众号: %s", account_name)
+        wechat_articles = wechat_scraper.search_account_articles(account_name)
+
+        for art in wechat_articles:
+            art.content_text = cleaner.clean_article_text(art.content_text)
+            if art.content_html:
+                art.content_html = cleaner.clean_html(art.content_html)
+        all_articles.extend(wechat_articles)
+
+        site_results.append({
+            "url": f"wechat:{account_name}",
+            "domain": f"公众号:{account_name}",
+            "status": "成功" if wechat_articles else "无匹配/搜索失败",
+            "reason": "" if wechat_articles else "未搜索到文章",
+            "articles": len(wechat_articles),
+        })
+
+    # 公众号问题汇总
+    problematic_accounts = [
+        r["domain"] for r in site_results
+        if r["domain"].startswith("公众号:") and r["status"] != "成功"
+    ]
+    if problematic_accounts:
+        logger.warning("=" * 60)
+        logger.warning("  以下公众号可能存在问题，请确认名称是否正确:")
+        for acc in problematic_accounts:
+            logger.warning("    - %s", acc.replace("公众号:", ""))
+        logger.warning("=" * 60)
 
     logger.info("抓取完成，共 %d 篇原始文章", len(all_articles))
 
@@ -250,6 +289,7 @@ def run_pipeline(
     dir_mgr = DirManager(DATA_DIR)
     article_dir, summary_dir = dir_mgr.ensure_dated_dirs()
     writer = Writer(article_dir, summary_dir)
+    html_writer = HtmlWriter(DATA_DIR / "daily_html")
 
     # 7. LLM 处理（可选）
     if skip_llm or not LLMClient("").is_configured:
@@ -259,6 +299,7 @@ def run_pipeline(
             logger.info("LLM 未配置或已跳过，使用纯文本摘要")
             summaries = [SummaryExtractor._fallback_summary(art) for art in all_articles]
             writer.write_summaries(summaries, all_articles)
+            html_writer.write_page(None, summaries, all_articles)
             return
 
     llm = LLMClient(
@@ -280,10 +321,14 @@ def run_pipeline(
     summaries = [summarizer.extract(art) for art in all_articles]
     writer.write_summaries(summaries, all_articles)
 
+    # 9. 生成 HTML 日报
+    html_writer.write_page(daily_article, summaries, all_articles)
+
     logger.info("=" * 50)
     logger.info("运行完成！输出目录: data/")
     logger.info("  综合文章: %s", article_dir)
     logger.info("  单篇摘要: %s", summary_dir)
+    logger.info("  HTML 日报: %s", DATA_DIR / "daily_html")
 
 
 # -- 定时任务 ----------------------------------------------
@@ -294,7 +339,9 @@ def run_scheduled(env: dict, rules: dict):
     logger = logging.getLogger("edusnap.scheduler")
     logger.info("定时模式已启动，每天 08:00 运行")
 
-    schedule.every().day.at("08:00").do(run_pipeline, env=env, rules=rules)
+    schedule.every().day.at("08:00").do(
+        run_pipeline, env=env, rules=rules,
+    )
 
     # 首次立即运行
     run_pipeline(env, rules)
@@ -492,6 +539,50 @@ class ScraperTester:
 
 
 # -- CLI ---------------------------------------------------
+def _preflight_check(env: dict, args) -> bool:
+    """启动前检查：确保环境就绪，对非技术用户友好提示"""
+    ok = True
+
+    # 1. 检查 sources.md
+    if not SOURCES_PATH.exists():
+        print()
+        print("=" * 60)
+        print("  ⛔ 缺少新闻来源文件")
+        print()
+        print("  请在以下文件中添加你要追踪的网站和公众号:")
+        print(f"    {SOURCES_PATH}")
+        print()
+        print("  格式示例:")
+        print("    - https://www.cam.ac.uk/latest-news")
+        print('    - wechat:公众号名称')
+        print("=" * 60)
+        ok = False
+
+    # 2. 检查 prompts 文件
+    for prompt_file in [COMPOSE_PROMPT_PATH, SUMMARY_PROMPT_PATH]:
+        if not prompt_file.exists():
+            print()
+            print("=" * 60)
+            print(f"  ⛔ 缺少提示词模板: {prompt_file.name}")
+            print(f"  请确保 config/prompts/ 目录下有该文件")
+            print("=" * 60)
+            ok = False
+
+    # 3. 检查 LLM 密钥（仅 --no-llm 时不阻塞，其他情况提示）
+    if not args.no_llm and not env.get("api_key"):
+        print()
+        print("=" * 60)
+        print("  ⚠ 未配置 LLM API 密钥")
+        print()
+        print("  如需 AI 自动合成新闻，请在 .env 文件中设置：")
+        print("    LLM_API_KEY=你的API密钥")
+        print()
+        print("  或者运行时加上 --no-llm 跳过 AI 步骤（仅抓取+输出到 HTML）")
+        print("=" * 60)
+
+    return ok
+
+
 def main():
     env = load_env()
     setup_logging(env["log_level"])
@@ -509,6 +600,10 @@ def main():
                         help="测试爬虫规则是否有效；可附带具体 URL")
 
     args = parser.parse_args()
+
+    # 启动前检查（非技术用户友好提示）
+    if not _preflight_check(env, args):
+        sys.exit(1)
 
     if args.test_scraper:
         tester = ScraperTester(env, rules)

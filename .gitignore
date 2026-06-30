@@ -17,6 +17,15 @@ logs/
 # Environment
 .env
 
+# WeChat cookies (sensitive auth data)
+config/cookies.txt
+config/cookies.json
+config/token.txt
+config/cookie_string.txt
+
+# Debug files
+debug_*.html
+
 # IDE
 .vscode/
 .idea/
