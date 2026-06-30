@@ -77,7 +77,7 @@ class WeChatScraper:
             # 第1页为空 → 搜狗没搜到这个公众号的任何结果
             if page == 1 and not items:
                 logger.warning("╔════════════════════════════════════════════╗")
-                logger.warning("║  ⚠ 公众号可能存在问题: %s", account_name)
+                logger.warning("║  [!] 公众号可能存在问题: %s", account_name)
                 logger.warning("║     搜狗搜索第1页无任何结果")
                 logger.warning("║     可能原因: 名称错误 / 未收录 / 已注销")
                 logger.warning("╚════════════════════════════════════════════╝")

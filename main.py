@@ -28,8 +28,13 @@ from src.output import DirManager, Writer, HtmlWriter
 
 # -- 路径常量 ----------------------------------------------
 if getattr(sys, 'frozen', False):
-    # PyInstaller 打包后，exe 同级目录
-    BASE_DIR = Path(sys.executable).resolve().parent
+    # PyInstaller 打包后，exe 所在目录
+    EXE_DIR = Path(sys.executable).resolve().parent
+    # 如果 config/ 在 exe 旁边就用 exe 目录，否则向上找（项目根目录）
+    if (EXE_DIR / "config").exists():
+        BASE_DIR = EXE_DIR
+    else:
+        BASE_DIR = EXE_DIR.parent
 else:
     BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
@@ -547,14 +552,14 @@ def _preflight_check(env: dict, args) -> bool:
     if not SOURCES_PATH.exists():
         print()
         print("=" * 60)
-        print("  ⛔ 缺少新闻来源文件")
+        print("  [X] 缺少新闻来源文件")
         print()
         print("  请在以下文件中添加你要追踪的网站和公众号:")
         print(f"    {SOURCES_PATH}")
         print()
         print("  格式示例:")
         print("    - https://www.cam.ac.uk/latest-news")
-        print('    - wechat:公众号名称')
+        print("    - wechat:公众号名称")
         print("=" * 60)
         ok = False
 
@@ -563,7 +568,7 @@ def _preflight_check(env: dict, args) -> bool:
         if not prompt_file.exists():
             print()
             print("=" * 60)
-            print(f"  ⛔ 缺少提示词模板: {prompt_file.name}")
+            print(f"  [X] 缺少提示词模板: {prompt_file.name}")
             print(f"  请确保 config/prompts/ 目录下有该文件")
             print("=" * 60)
             ok = False
@@ -572,9 +577,9 @@ def _preflight_check(env: dict, args) -> bool:
     if not args.no_llm and not env.get("api_key"):
         print()
         print("=" * 60)
-        print("  ⚠ 未配置 LLM API 密钥")
+        print("  [!] 未配置 LLM API 密钥")
         print()
-        print("  如需 AI 自动合成新闻，请在 .env 文件中设置：")
+        print("  如需 AI 自动合成新闻，请在 .env 文件中设置:")
         print("    LLM_API_KEY=你的API密钥")
         print()
         print("  或者运行时加上 --no-llm 跳过 AI 步骤（仅抓取+输出到 HTML）")
